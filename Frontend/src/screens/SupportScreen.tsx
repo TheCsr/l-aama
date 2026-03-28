@@ -1,8 +1,9 @@
-import React from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Alert, Linking } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Alert, Linking, ActivityIndicator } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Theme } from '../constants/Theme';
+import { SUPPORT_REGIONS, RegionalSupport } from '../constants/Helplines';
 
 const CATEGORIES = ["Volunteers", "Counsellors", "NGOs", "Helplines", "Student support"];
 
@@ -12,6 +13,34 @@ const SUPPORT_ORGS = [
 ];
 
 export default function SupportScreen() {
+  const [region, setRegion] = useState<RegionalSupport | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchLocation() {
+      try {
+        const response = await fetch('https://ipapi.co/json/');
+        const data = await response.json();
+        const detectedRegion = SUPPORT_REGIONS[data.country_code] || SUPPORT_REGIONS['DEFAULT'];
+        setRegion(detectedRegion);
+      } catch (error) {
+        console.warn('Geolocation failed, using default', error);
+        setRegion(SUPPORT_REGIONS['DEFAULT']);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchLocation();
+  }, []);
+
+  if (loading || !region) {
+     return (
+       <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+          <ActivityIndicator size="large" color={Theme.colors.mascotCoral} />
+       </SafeAreaView>
+     );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -25,12 +54,12 @@ export default function SupportScreen() {
         <View style={styles.urgentCard}>
           <View style={styles.urgentHeaderRow}>
             <Ionicons name="warning" size={20} color={Theme.colors.urgentSoft} />
-            <Text style={styles.urgentTitle}>Need urgent help?</Text>
+            <Text style={styles.urgentTitle}>Need urgent help? ({region.countryName})</Text>
           </View>
-          <Text style={styles.urgentDesc}>You deserve immediate human support right now.</Text>
-          <TouchableOpacity style={styles.urgentAction} activeOpacity={0.8} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy); Linking.openURL('tel:988').catch(() => Alert.alert('Dialing', 'Need urgent help? Calling 988...')); }}>
-            <Text style={styles.urgentActionText}>See urgent options</Text>
-            <Ionicons name="arrow-forward" size={16} color={Theme.colors.surface} />
+          <Text style={styles.urgentDesc}>Dial your local emergency medical services immediately.</Text>
+          <TouchableOpacity style={styles.urgentAction} activeOpacity={0.8} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy); Linking.openURL(`tel:${region.emergencyMedical}`).catch(() => Alert.alert('Error', `Please dial ${region.emergencyMedical}`)); }}>
+            <Text style={styles.urgentActionText}>Call {region.emergencyMedical}</Text>
+            <Ionicons name="call" size={16} color={Theme.colors.surface} />
           </TouchableOpacity>
         </View>
 
@@ -43,8 +72,55 @@ export default function SupportScreen() {
           ))}
         </ScrollView>
 
+        {/* Local Helplines Section */}
         <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Available Contacts</Text>
+            <Text style={styles.sectionTitle}>Mental Health Lines ({region.countryName})</Text>
+        </View>
+        <View style={styles.section}>
+          {region.mentalHealth.map((hl, i) => (
+             <View key={`hl-${i}`} style={styles.orgCard}>
+                <View style={styles.orgHeader}>
+                   <Text style={styles.orgName}>{hl.name}</Text>
+                </View>
+                <Text style={styles.orgDesc}>{hl.description}</Text>
+                <TouchableOpacity style={styles.contactBtn} activeOpacity={0.8} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    if(hl.number.startsWith('http')) { Linking.openURL(hl.number); }
+                    else { Linking.openURL(`tel:${hl.number.replace(/ /g,'')}`); }
+                 }}>
+                  <Text style={styles.contactBtnText}>{hl.number.startsWith('http') ? 'Visit Website' : `Call ${hl.number}`}</Text>
+                </TouchableOpacity>
+             </View>
+          ))}
+        </View>
+
+        {/* Embassy Section */}
+        <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Nepal Embassy ({region.countryName})</Text>
+        </View>
+        <View style={styles.section}>
+             <View style={styles.orgCard}>
+                <View style={styles.orgHeader}>
+                   <Text style={styles.orgName}>{region.countryName === 'International' ? 'Ministry of Foreign Affairs' : 'Embassy & Consular Services'}</Text>
+                </View>
+                <Text style={[styles.orgDesc, {marginBottom: 12, fontSize: 13}]}><Ionicons name="location-outline" size={14}/> {region.embassy.address}</Text>
+                
+                <View style={{flexDirection: 'row', gap: 8, marginBottom: 16, flexWrap: 'wrap'}}>
+                  <TouchableOpacity style={{backgroundColor: Theme.colors.surfaceSoft, paddingHorizontal: 12, paddingVertical: 6, borderRadius: Theme.radius.pill}} onPress={() => Linking.openURL(`mailto:${region.embassy.email}`)}>
+                    <Text style={{color: Theme.colors.textSecondary, fontSize: 12}}>Email</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={{backgroundColor: Theme.colors.surfaceSoft, paddingHorizontal: 12, paddingVertical: 6, borderRadius: Theme.radius.pill}} onPress={() => Linking.openURL(region.embassy.website)}>
+                    <Text style={{color: Theme.colors.textSecondary, fontSize: 12}}>Website</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity style={styles.contactBtn} activeOpacity={0.8} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); Linking.openURL(`tel:${region.embassy.phone.replace(/ /g,'')}`); }}>
+                  <Text style={styles.contactBtnText}>Call {region.embassy.phone}</Text>
+                </TouchableOpacity>
+             </View>
+        </View>
+
+        <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>General Directory</Text>
         </View>
 
         <View style={styles.section}>
