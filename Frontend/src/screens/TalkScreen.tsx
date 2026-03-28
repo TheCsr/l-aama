@@ -63,7 +63,8 @@ export default function TalkScreen() {
 
   // 2. FastAPI Network Request
   const sendAudioToServer = async (uri: string) => {
-    const SERVER_URL = 'https://intertransversal-ronan-undistinguishingly.ngrok-free.dev/chat/voice'; 
+
+    const SERVER_URL = 'http://192.168.1.69:8000/chat/voice';
     const formData = new FormData();
     const fileType = uri.split('.').pop();
     formData.append('file', { uri, name: `audio.${fileType}`, type: `audio/${fileType}` } as any);
