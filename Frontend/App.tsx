@@ -1,42 +1,41 @@
 import React, { useState } from 'react';
 import { StyleSheet, View, TouchableOpacity, SafeAreaView, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { Theme } from './src/constants/Theme';
 
-// Notice the added '/src/' in these paths!
-import TalkScreen from './src/screens/TalkScreen';
-import CommunityScreen from './src/screens/CommunityScreen';
-import LovedOnesScreen from './src/screens/LovedOnesScreen';
+import HomeScreen from './src/screens/HomeScreen';
+import CommunitiesScreen from './src/screens/CommunitiesScreen';
+import SupportScreen from './src/screens/SupportScreen';
 
-type TabName = 'Talk' | 'Community' | 'LovedOnes';
-
+type TabName = 'Home' | 'Communities' | 'Support';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<TabName>('Talk');
+  const [activeTab, setActiveTab] = useState<TabName>('Home');
 
   return (
     <SafeAreaView style={styles.container}>
       {/* 1. Main Content Area */}
       <View style={styles.screenContainer}>
-        {activeTab === 'Talk' && <TalkScreen />}
-        {activeTab === 'Community' && <CommunityScreen />}
-        {activeTab === 'LovedOnes' && <LovedOnesScreen />}
+        {activeTab === 'Home' && <HomeScreen />}
+        {activeTab === 'Communities' && <CommunitiesScreen />}
+        {activeTab === 'Support' && <SupportScreen />}
       </View>
 
       {/* 2. Custom Bottom Navigation Bar */}
       <View style={styles.navBar}>
-        <TouchableOpacity style={styles.navItem} onPress={() => setActiveTab('Talk')}>
-          <Ionicons name={activeTab === 'Talk' ? "mic" : "mic-outline"} size={28} color={activeTab === 'Talk' ? "#4299E1" : "#718096"} />
-          <Text style={[styles.navText, { color: activeTab === 'Talk' ? "#4299E1" : "#718096" }]}>Talk</Text>
+        <TouchableOpacity style={styles.navItem} onPress={() => setActiveTab('Home')}>
+          <Ionicons name={activeTab === 'Home' ? "home" : "home-outline"} size={28} color={activeTab === 'Home' ? Theme.colors.mascotCoral : Theme.colors.textTertiary} />
+          <Text style={[styles.navText, { color: activeTab === 'Home' ? Theme.colors.mascotCoral : Theme.colors.textTertiary }]}>Home</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.navItem} onPress={() => setActiveTab('Community')}>
-          <Ionicons name={activeTab === 'Community' ? "people" : "people-outline"} size={28} color={activeTab === 'Community' ? "#4299E1" : "#718096"} />
-          <Text style={[styles.navText, { color: activeTab === 'Community' ? "#4299E1" : "#718096" }]}>Community</Text>
+        <TouchableOpacity style={styles.navItem} onPress={() => setActiveTab('Communities')}>
+          <Ionicons name={activeTab === 'Communities' ? "people" : "people-outline"} size={28} color={activeTab === 'Communities' ? Theme.colors.mascotCoral : Theme.colors.textTertiary} />
+          <Text style={[styles.navText, { color: activeTab === 'Communities' ? Theme.colors.mascotCoral : Theme.colors.textTertiary }]}>Communities</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.navItem} onPress={() => setActiveTab('LovedOnes')}>
-          <Ionicons name={activeTab === 'LovedOnes' ? "heart" : "heart-outline"} size={28} color={activeTab === 'LovedOnes' ? "#4299E1" : "#718096"} />
-          <Text style={[styles.navText, { color: activeTab === 'LovedOnes' ? "#4299E1" : "#718096" }]}>Loved Ones</Text>
+        <TouchableOpacity style={styles.navItem} onPress={() => setActiveTab('Support')}>
+          <Ionicons name={activeTab === 'Support' ? "heart" : "heart-outline"} size={28} color={activeTab === 'Support' ? Theme.colors.mascotCoral : Theme.colors.textTertiary} />
+          <Text style={[styles.navText, { color: activeTab === 'Support' ? Theme.colors.mascotCoral : Theme.colors.textTertiary }]}>Support</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -44,16 +43,17 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#161C24' },
+  container: { flex: 1, backgroundColor: Theme.colors.background },
   screenContainer: { flex: 1 },
   navBar: { 
     flexDirection: 'row', 
     justifyContent: 'space-around', 
-    backgroundColor: '#1A202C', 
-    paddingVertical: 12, 
+    backgroundColor: Theme.colors.surface, 
+    height: Theme.spacing.bottomNavSize,
+    paddingTop: 12,
     borderTopWidth: 1, 
-    borderTopColor: '#2D3748' 
+    borderTopColor: Theme.colors.divider 
   },
-  navItem: { alignItems: 'center', justifyContent: 'center' },
+  navItem: { alignItems: 'center' },
   navText: { fontSize: 12, marginTop: 4, fontWeight: '500' }
 });
