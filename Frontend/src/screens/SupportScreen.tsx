@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Alert, Linking } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { Theme } from '../constants/Theme';
 
 const CATEGORIES = ["Volunteers", "Counsellors", "NGOs", "Helplines", "Student support"];
@@ -27,7 +28,7 @@ export default function SupportScreen() {
             <Text style={styles.urgentTitle}>Need urgent help?</Text>
           </View>
           <Text style={styles.urgentDesc}>You deserve immediate human support right now.</Text>
-          <TouchableOpacity style={styles.urgentAction} activeOpacity={0.8}>
+          <TouchableOpacity style={styles.urgentAction} activeOpacity={0.8} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy); Linking.openURL('tel:988').catch(() => Alert.alert('Dialing', 'Need urgent help? Calling 988...')); }}>
             <Text style={styles.urgentActionText}>See urgent options</Text>
             <Ionicons name="arrow-forward" size={16} color={Theme.colors.surface} />
           </TouchableOpacity>
@@ -62,7 +63,7 @@ export default function SupportScreen() {
                 <Text style={styles.helpsWithText}>{org.helpWith}</Text>
               </View>
 
-              <TouchableOpacity style={styles.contactBtn} activeOpacity={0.8}>
+              <TouchableOpacity style={styles.contactBtn} activeOpacity={0.8} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); Alert.alert("Options", `Opening contact pathways for ${org.name}`); }}>
                 <Text style={styles.contactBtnText}>View options</Text>
               </TouchableOpacity>
             </View>

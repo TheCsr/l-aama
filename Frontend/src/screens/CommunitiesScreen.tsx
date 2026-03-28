@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TextInput, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, ScrollView, TextInput, TouchableOpacity, Alert } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { Theme } from '../constants/Theme';
 
 const FORUMS = [
@@ -35,7 +36,7 @@ export default function CommunitiesScreen() {
         </View>
 
         {FORUMS.map((forum) => (
-          <TouchableOpacity key={forum.id} style={styles.forumCard} activeOpacity={0.7}>
+          <TouchableOpacity key={forum.id} style={styles.forumCard} activeOpacity={0.7} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); Alert.alert('Entering Forum', `You are entering the anonymous space for: ${forum.title}`); }}>
             <View style={styles.cardInfo}>
               <View style={styles.cardHeader}>
                 <Text style={styles.forumTitle}>{forum.title}</Text>
@@ -57,7 +58,7 @@ export default function CommunitiesScreen() {
       </ScrollView>
 
       {/* Floating Action Button for New Thread */}
-      <TouchableOpacity style={styles.fab} activeOpacity={0.8}>
+      <TouchableOpacity style={styles.fab} activeOpacity={0.8} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); Alert.alert("New Thread", "Opening the post composer modal..."); }}>
         <Ionicons name="create" size={24} color={Theme.colors.surface} />
       </TouchableOpacity>
     </SafeAreaView>

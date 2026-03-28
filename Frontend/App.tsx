@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, View, TouchableOpacity, SafeAreaView, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { Theme } from './src/constants/Theme';
 
 import HomeScreen from './src/screens/HomeScreen';
@@ -23,17 +24,17 @@ export default function App() {
 
       {/* 2. Custom Bottom Navigation Bar */}
       <View style={styles.navBar}>
-        <TouchableOpacity style={styles.navItem} onPress={() => setActiveTab('Home')}>
+        <TouchableOpacity style={styles.navItem} onPress={() => { Haptics.selectionAsync(); setActiveTab('Home'); }}>
           <Ionicons name={activeTab === 'Home' ? "home" : "home-outline"} size={28} color={activeTab === 'Home' ? Theme.colors.mascotCoral : Theme.colors.textTertiary} />
           <Text style={[styles.navText, { color: activeTab === 'Home' ? Theme.colors.mascotCoral : Theme.colors.textTertiary }]}>Home</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.navItem} onPress={() => setActiveTab('Communities')}>
+        <TouchableOpacity style={styles.navItem} onPress={() => { Haptics.selectionAsync(); setActiveTab('Communities'); }}>
           <Ionicons name={activeTab === 'Communities' ? "people" : "people-outline"} size={28} color={activeTab === 'Communities' ? Theme.colors.mascotCoral : Theme.colors.textTertiary} />
           <Text style={[styles.navText, { color: activeTab === 'Communities' ? Theme.colors.mascotCoral : Theme.colors.textTertiary }]}>Communities</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.navItem} onPress={() => setActiveTab('Support')}>
+        <TouchableOpacity style={styles.navItem} onPress={() => { Haptics.selectionAsync(); setActiveTab('Support'); }}>
           <Ionicons name={activeTab === 'Support' ? "heart" : "heart-outline"} size={28} color={activeTab === 'Support' ? Theme.colors.mascotCoral : Theme.colors.textTertiary} />
           <Text style={[styles.navText, { color: activeTab === 'Support' ? Theme.colors.mascotCoral : Theme.colors.textTertiary }]}>Support</Text>
         </TouchableOpacity>

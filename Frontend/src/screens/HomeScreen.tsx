@@ -1,21 +1,40 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Animated, Image } from 'react-native';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Animated, Image, Pressable, Modal } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
+import * as Haptics from 'expo-haptics';
 import { Theme } from '../constants/Theme';
 
 type AppState = 'idle' | 'recording' | 'processing' | 'reflection';
+
+// Pre-require all mascot images at module level so they're always loaded
+const MASCOT_IDLE = require('../../assets/mascot_idle.png');
+const MASCOT_LISTEN = require('../../assets/mascot_listen.png');
+const MASCOT_THINK = require('../../assets/mascot_think.png');
 
 export default function HomeScreen() {
   const [appState, setAppState] = useState<AppState>('idle');
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [transcript, setTranscript] = useState<string>('');
-  
-  // Glowing animation
-  const glowAnim = useRef(new Animated.Value(1)).current;
 
+  // Modals & Interactive states
+  const [showAudioSheet, setShowAudioSheet] = useState(false);
+  const [isPlaying432, setIsPlaying432] = useState(false);
+
+  // Sounds refs — use refs to avoid stale closure issues
+  const tapSoundRef = useRef<Audio.Sound | null>(null);
+  const patSoundRef = useRef<Audio.Sound | null>(null);
+  const calmSoundRef = useRef<Audio.Sound | null>(null);
+
+  // Animations
+  const glowAnim = useRef(new Animated.Value(1)).current;
+  const mascotScale = useRef(new Animated.Value(1)).current;
+
+  // ──── Audio setup ────
   useEffect(() => {
+    let mounted = true;
+
     (async () => {
       try {
         const { status } = await Audio.requestPermissionsAsync();
@@ -27,30 +46,108 @@ export default function HomeScreen() {
           shouldDuckAndroid: true,
           playThroughEarpieceAndroid: false,
         });
+
+        // UI tap sound
+        const { sound: tap } = await Audio.Sound.createAsync(require('../../assets/tap.wav'));
+        if (mounted) tapSoundRef.current = tap;
+
+        // Real cloth pat sound from Pixabay
+        const { sound: pat } = await Audio.Sound.createAsync(
+          require('../../assets/freesound_community-pat-cloth-6727.mp3')
+        );
+        if (mounted) patSoundRef.current = pat;
+
+        // 432Hz therapeutic tone (loaded but NOT played yet)
+        const { sound: calm } = await Audio.Sound.createAsync(require('../../assets/432hz.wav'));
+        await calm.setIsLoopingAsync(true);
+        if (mounted) calmSoundRef.current = calm;
+
       } catch (e) {
-        console.error("Audio init error:", e);
+        console.error('Audio init error:', e);
       }
     })();
+
+    return () => {
+      mounted = false;
+      tapSoundRef.current?.unloadAsync();
+      patSoundRef.current?.unloadAsync();
+      calmSoundRef.current?.unloadAsync();
+    };
   }, []);
 
+  // ──── Breathing glow animation ────
   useEffect(() => {
-    // Breathing glow animation
     Animated.loop(
       Animated.sequence([
-        Animated.timing(glowAnim, {
-          toValue: 1.2,
-          duration: 1500,
-          useNativeDriver: true,
-        }),
-        Animated.timing(glowAnim, {
-          toValue: 1,
-          duration: 1500,
-          useNativeDriver: true,
-        })
+        Animated.timing(glowAnim, { toValue: 1.2, duration: 1500, useNativeDriver: true }),
+        Animated.timing(glowAnim, { toValue: 1, duration: 1500, useNativeDriver: true }),
       ])
     ).start();
   }, [glowAnim]);
 
+  // ──── Sound helpers ────
+  const playTap = useCallback(async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Switch to playback mode, play, then switch back
+    try {
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+      await tapSoundRef.current?.replayAsync();
+    } catch {}
+  }, []);
+
+  const handlePetMascot = useCallback(async () => {
+    // Fire haptic FIRST — synchronous, always works
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // Bounce animation — fires immediately
+    Animated.sequence([
+      Animated.timing(mascotScale, { toValue: 0.85, duration: 80, useNativeDriver: true }),
+      Animated.spring(mascotScale, { toValue: 1, friction: 3, tension: 200, useNativeDriver: true }),
+    ]).start();
+    // Play the cloth pat sound
+    try {
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+      await patSoundRef.current?.replayAsync();
+    } catch (e) {
+      console.warn('Pat sound error:', e);
+    }
+  }, [mascotScale]);
+
+  // ──── 432Hz controls ────
+  const startCalmAudio = useCallback(async () => {
+    try {
+      // Switch audio mode to playback so iOS actually outputs sound
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+      });
+      await calmSoundRef.current?.playFromPositionAsync(0);
+      setIsPlaying432(true);
+    } catch (e) {
+      console.error('Calm audio play error:', e);
+    }
+  }, []);
+
+  const stopCalmAudio = useCallback(async () => {
+    try {
+      await calmSoundRef.current?.stopAsync();
+      setIsPlaying432(false);
+      // Restore recording-capable audio mode
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+      });
+    } catch (e) {
+      console.error('Calm audio stop error:', e);
+    }
+  }, []);
+
+  // ──── Voice recording ────
   const sendAudioToServer = async (uri: string) => {
     const SERVER_URL = 'http://192.168.1.69:8000/chat/voice';
     const formData = new FormData();
@@ -58,34 +155,50 @@ export default function HomeScreen() {
     formData.append('file', { uri, name: `audio.${fileType}`, type: `audio/${fileType}` } as any);
 
     try {
-      const response = await fetch(SERVER_URL, { method: 'POST', body: formData, headers: { 'Content-Type': 'multipart/form-data' }});
+      const response = await fetch(SERVER_URL, {
+        method: 'POST',
+        body: formData,
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
       const data = await response.json();
-      
+
       setAppState('reflection');
-      setTranscript(data.response || "It sounds like you may be carrying a mix of pressure and exhaustion.");
+      setTranscript(data.response || 'It sounds like you may be carrying a mix of pressure and exhaustion.');
+      playTap();
       if (data.response) Speech.speak(data.response, { rate: 0.9, pitch: 1.0 });
-    } catch (error) {
-      console.warn("Server unreachable, mocking UI...");
+    } catch {
+      console.warn('Server unreachable, mocking UI...');
       setTimeout(() => {
         setAppState('reflection');
-        const fallbackText = "I am having trouble connecting to my brain, but I am still here with you. Take a warm breath.";
+        const fallbackText =
+          'I am having trouble connecting to my brain, but I am still here with you. Take a warm breath.';
         setTranscript(fallbackText);
+        playTap();
         Speech.speak(fallbackText, { rate: 0.9 });
       }, 1500);
     }
   };
 
   const handlePress = async () => {
+    playTap();
     if (appState === 'idle' || appState === 'reflection') {
-      Speech.stop(); 
+      Speech.stop();
       try {
+        // Re-enable recording mode (playTap/pet may have switched it off)
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: true,
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: false,
+          shouldDuckAndroid: true,
+          playThroughEarpieceAndroid: false,
+        });
         setAppState('recording');
         const { recording: newRecording } = await Audio.Recording.createAsync(
-            Audio.RecordingOptionsPresets.HIGH_QUALITY
+          Audio.RecordingOptionsPresets.HIGH_QUALITY
         );
         setRecording(newRecording);
       } catch (err) {
-        console.error("Recording failed:", err);
+        console.error('Recording failed:', err);
         setAppState('idle');
       }
     } else if (appState === 'recording') {
@@ -98,7 +211,7 @@ export default function HomeScreen() {
           if (uri) await sendAudioToServer(uri);
           else setAppState('idle');
         } catch (err) {
-          console.error("Failed to stop recording:", err);
+          console.error('Failed to stop recording:', err);
           setRecording(null);
           setAppState('idle');
         }
@@ -106,40 +219,50 @@ export default function HomeScreen() {
     }
   };
 
+  // ──── Which mascot to show ────
+  const mascotSource =
+    appState === 'recording'
+      ? MASCOT_LISTEN
+      : appState === 'processing' || appState === 'reflection'
+        ? MASCOT_THINK
+        : MASCOT_IDLE;
+
   return (
     <View style={styles.container}>
-      
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.logo}>Asha</Text>
-        <View style={styles.privacyPill}>
-          <Ionicons name="lock-closed" size={12} color={Theme.colors.mascotCocoa} style={{marginRight: 4}}/>
+        <TouchableOpacity style={styles.privacyPill} onPress={playTap} activeOpacity={0.7}>
+          <Ionicons name="lock-closed" size={12} color={Theme.colors.mascotCocoa} style={{ marginRight: 4 }} />
           <Text style={styles.privacyText}>
             {appState === 'recording' ? 'Listening privately' : 'Private by default'}
           </Text>
-        </View>
-        <TouchableOpacity>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={playTap}>
           <Ionicons name="settings-outline" size={24} color={Theme.colors.textSecondary} />
         </TouchableOpacity>
       </View>
 
       <View style={styles.mainContent}>
-        
         {/* Mascot & Hero Mic */}
         <View style={styles.micContainer}>
-          
           <View style={styles.micWrapper}>
-            {/* Render all 3 states at opacity 0/1 to eliminate flickering */}
-            <Image source={require('../../assets/mascot_idle.png')} style={[styles.mascot, { opacity: appState === 'idle' ? 1 : 0 }]} />
-            <Image source={require('../../assets/mascot_listen.png')} style={[styles.mascot, { opacity: appState === 'recording' ? 1 : 0 }]} />
-            <Image source={require('../../assets/mascot_think.png')} style={[styles.mascot, { opacity: (appState === 'processing' || appState === 'reflection') ? 1 : 0 }]} />
-            
-            <Animated.View style={[
-              styles.glowRing, 
-              { transform: [{ scale: appState === 'idle' ? glowAnim : 1 }] },
-              appState === 'recording' && styles.glowRingActive
-            ]} />
-            
+            {/* Mascot — always rendered, single Image swapping source */}
+            <Pressable onPress={handlePetMascot} style={styles.mascotTouchArea}>
+              <Animated.Image
+                source={mascotSource}
+                style={[styles.mascotImage, { transform: [{ scale: mascotScale }] }]}
+              />
+            </Pressable>
+
+            <Animated.View
+              style={[
+                styles.glowRing,
+                { transform: [{ scale: appState === 'idle' ? glowAnim : 1 }] },
+                appState === 'recording' && styles.glowRingActive,
+              ]}
+            />
+
             <TouchableOpacity
               style={[styles.micButton, appState === 'recording' && styles.micButtonActive]}
               onPress={handlePress}
@@ -148,16 +271,18 @@ export default function HomeScreen() {
             >
               {appState === 'idle' && <Ionicons name="mic" size={56} color="#FFFFFF" />}
               {appState === 'recording' && <Ionicons name="stop" size={40} color="#FFFFFF" />}
-              {appState === 'processing' && <MaterialCommunityIcons name="waveform" size={56} color="#FFFFFF" />}
+              {appState === 'processing' && (
+                <MaterialCommunityIcons name="waveform" size={56} color="#FFFFFF" />
+              )}
               {appState === 'reflection' && <Ionicons name="mic" size={56} color="#FFFFFF" />}
             </TouchableOpacity>
           </View>
-          
+
           <Text style={styles.helperText}>
-            {appState === 'idle' && "Tap to talk"}
-            {appState === 'recording' && "Take your time..."}
-            {appState === 'processing' && "Thinking..."}
-            {appState === 'reflection' && "Tap to talk again"}
+            {appState === 'idle' && 'Tap to talk'}
+            {appState === 'recording' && 'Take your time...'}
+            {appState === 'processing' && 'Thinking...'}
+            {appState === 'reflection' && 'Tap to talk again'}
           </Text>
           {(appState === 'idle' || appState === 'reflection') && (
             <Text style={styles.subHelperText}>Say as much or as little as you want</Text>
@@ -167,21 +292,29 @@ export default function HomeScreen() {
         {/* Reflection Card OR Calm Audio */}
         <View style={styles.bottomSection}>
           {appState === 'reflection' ? (
-            <View style={styles.reflectionCard}>
+            <TouchableOpacity style={styles.reflectionCard} activeOpacity={0.9} onPress={playTap}>
               <Text style={styles.reflectionTitle}>What I'm noticing</Text>
               <Text style={styles.reflectionBody}>{transcript}</Text>
               <View style={styles.tagContainer}>
                 <Text style={styles.tag}>Burnout</Text>
                 <Text style={styles.tag}>Pressure</Text>
               </View>
-            </View>
+            </TouchableOpacity>
           ) : (
-            <TouchableOpacity style={styles.calmAudioCard}>
-              <View style={{flexDirection: 'row', alignItems: 'center'}}>
+            <TouchableOpacity
+              style={styles.calmAudioCard}
+              activeOpacity={0.8}
+              onPress={async () => {
+                playTap();
+                setShowAudioSheet(true);
+                await startCalmAudio();
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <View style={styles.playIconContainer}>
                   <Ionicons name="play" size={20} color={Theme.colors.surface} />
                 </View>
-                <View style={{marginLeft: 16}}>
+                <View style={{ marginLeft: 16 }}>
                   <Text style={styles.calmAudioTitle}>Calming audio</Text>
                   <Text style={styles.calmAudioSub}>Take a quiet moment first</Text>
                 </View>
@@ -189,36 +322,186 @@ export default function HomeScreen() {
             </TouchableOpacity>
           )}
         </View>
-
       </View>
+
+      {/* Calm Audio Sheet Overlay */}
+      <Modal
+        visible={showAudioSheet}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={async () => {
+          setShowAudioSheet(false);
+          await stopCalmAudio();
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>432 Hz · Calming tone</Text>
+            <Text style={styles.modalSub}>Close your eyes. Breathe slowly.</Text>
+
+            <View style={styles.audioVisualizerPlaceholder}>
+              <Animated.View
+                style={[
+                  styles.glowRingModal,
+                  { transform: [{ scale: glowAnim }] },
+                ]}
+              />
+              <Ionicons name="musical-notes" size={48} color={Theme.colors.mascotCoral} />
+            </View>
+
+            <TouchableOpacity
+              style={styles.modalCloseBtn}
+              onPress={async () => {
+                playTap();
+                setShowAudioSheet(false);
+                await stopCalmAudio();
+              }}
+            >
+              <Text style={styles.modalCloseText}>Stop & Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Theme.colors.background },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Theme.spacing.screenPadding, paddingTop: 20 },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: Theme.spacing.screenPadding,
+    paddingTop: 20,
+  },
   logo: { fontSize: 24, fontWeight: 'bold', color: Theme.colors.textPrimary },
-  privacyPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: Theme.colors.surfaceSoft, paddingHorizontal: 12, paddingVertical: 6, borderRadius: Theme.radius.pill, borderWidth: 1, borderColor: Theme.colors.divider },
+  privacyPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Theme.colors.surfaceSoft,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: Theme.radius.pill,
+    borderWidth: 1,
+    borderColor: Theme.colors.divider,
+  },
   privacyText: { color: Theme.colors.mascotCocoa, fontSize: 12, fontWeight: '500' },
   mainContent: { flex: 1, justifyContent: 'space-between', paddingVertical: 40 },
   micContainer: { alignItems: 'center', marginTop: 20, flex: 1 },
   micWrapper: { alignItems: 'center', justifyContent: 'center', marginTop: 100 },
-  mascot: { width: 140, height: 140, resizeMode: 'contain', position: 'absolute', top: -115, zIndex: 10 },
-  glowRing: { position: 'absolute', width: 220, height: 220, borderRadius: 110, backgroundColor: Theme.colors.warmGlow },
+
+  // ── Mascot: always visible, sits on top of mic ──
+  mascotTouchArea: {
+    position: 'absolute',
+    top: -120,
+    zIndex: 10,
+    width: 150,
+    height: 150,
+  },
+  mascotImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'contain',
+  },
+
+  glowRing: {
+    position: 'absolute',
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: Theme.colors.warmGlow,
+  },
   glowRingActive: { backgroundColor: 'rgba(215,135,114,0.3)' },
-  micButton: { width: 140, height: 140, borderRadius: 70, backgroundColor: Theme.colors.mascotCoral, alignItems: 'center', justifyContent: 'center', elevation: 6, shadowColor: Theme.colors.mascotCoral, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 15, zIndex: 5 },
+  micButton: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: Theme.colors.mascotCoral,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 6,
+    shadowColor: Theme.colors.mascotCoral,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 15,
+    zIndex: 5,
+  },
   micButtonActive: { backgroundColor: Theme.colors.mascotClay },
   helperText: { color: Theme.colors.textPrimary, fontSize: 22, fontWeight: '600', marginTop: 60 },
   subHelperText: { color: Theme.colors.textSecondary, fontSize: 15, marginTop: 8 },
   bottomSection: { paddingHorizontal: Theme.spacing.screenPadding, paddingBottom: 20 },
-  calmAudioCard: { backgroundColor: Theme.colors.surface, borderRadius: Theme.radius.card, padding: Theme.spacing.cardPadding, flexDirection: 'row', alignItems: 'center', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 },
-  playIconContainer: { width: 44, height: 44, borderRadius: 22, backgroundColor: Theme.colors.mascotPeach, alignItems: 'center', justifyContent: 'center' },
+  calmAudioCard: {
+    backgroundColor: Theme.colors.surface,
+    borderRadius: Theme.radius.card,
+    padding: Theme.spacing.cardPadding,
+    flexDirection: 'row',
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+  },
+  playIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Theme.colors.mascotPeach,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   calmAudioTitle: { color: Theme.colors.textPrimary, fontSize: 16, fontWeight: '600' },
   calmAudioSub: { color: Theme.colors.textSecondary, fontSize: 14, marginTop: 4 },
-  reflectionCard: { backgroundColor: Theme.colors.surface, borderRadius: Theme.radius.card, padding: Theme.spacing.cardPadding, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 },
+  reflectionCard: {
+    backgroundColor: Theme.colors.surface,
+    borderRadius: Theme.radius.card,
+    padding: Theme.spacing.cardPadding,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+  },
   reflectionTitle: { color: Theme.colors.textPrimary, fontSize: 18, fontWeight: '600', marginBottom: 12 },
   reflectionBody: { color: Theme.colors.textSecondary, fontSize: 16, lineHeight: 24, marginBottom: 16 },
   tagContainer: { flexDirection: 'row', gap: 8 },
-  tag: { color: Theme.colors.textSecondary, backgroundColor: Theme.colors.surfaceSoft, paddingHorizontal: 12, paddingVertical: 6, borderRadius: Theme.radius.pill, fontSize: 12 },
+  tag: {
+    color: Theme.colors.textSecondary,
+    backgroundColor: Theme.colors.surfaceSoft,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: Theme.radius.pill,
+    fontSize: 12,
+  },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(70, 42, 38, 0.4)', justifyContent: 'flex-end' },
+  modalSheet: {
+    backgroundColor: Theme.colors.background,
+    borderTopLeftRadius: Theme.radius.sheet,
+    borderTopRightRadius: Theme.radius.sheet,
+    padding: Theme.spacing.screenPadding,
+    paddingBottom: 40,
+    alignItems: 'center',
+  },
+  modalHandle: { width: 40, height: 5, borderRadius: 3, backgroundColor: Theme.colors.divider, marginBottom: 20 },
+  modalTitle: { color: Theme.colors.textPrimary, fontSize: 22, fontWeight: '700', marginBottom: 8 },
+  modalSub: { color: Theme.colors.textSecondary, fontSize: 15, marginBottom: 40 },
+  audioVisualizerPlaceholder: { height: 140, alignItems: 'center', justifyContent: 'center', marginBottom: 40 },
+  glowRingModal: {
+    position: 'absolute',
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: Theme.colors.surfaceSoft,
+  },
+  modalCloseBtn: {
+    backgroundColor: Theme.colors.mascotCoral,
+    paddingVertical: 14,
+    width: '100%',
+    borderRadius: Theme.radius.pill,
+    alignItems: 'center',
+  },
+  modalCloseText: { color: '#FFFFFF', fontWeight: '600', fontSize: 16 },
 });
