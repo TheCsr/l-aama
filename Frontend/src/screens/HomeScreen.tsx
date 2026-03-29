@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Animated, Image, Pressable, Modal, Linking } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Animated, Image, Pressable, Modal, Linking, TextInput, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
@@ -26,6 +26,15 @@ export default function HomeScreen() {
   // --- NEW: Escalation Modal States ---
   const [showLevel2Modal, setShowLevel2Modal] = useState(false);
   const [showLevel3Modal, setShowLevel3Modal] = useState(false);
+
+  // --- Memory/Profile Modal States ---
+  const [showMemoryModal, setShowMemoryModal] = useState(false);
+  const [profileText, setProfileText] = useState('');
+  const [editedProfileText, setEditedProfileText] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const DEVICE_TOKEN = 'default_user';
 
   // Sounds refs
   const tapSoundRef = useRef<Audio.Sound | null>(null);
@@ -138,9 +147,49 @@ export default function HomeScreen() {
     }
   }, []);
 
+  // ──── Memory/Profile helpers ────
+  const fetchProfile = useCallback(async () => {
+    setProfileLoading(true);
+    try {
+      const res = await fetch(`${SERVER_BASE}/chat/profile/${DEVICE_TOKEN}`);
+      const data = await res.json();
+      const text = data.profile || 'No profile built yet. Start a conversation and Sathi will learn about you.';
+      setProfileText(text);
+      setEditedProfileText(text);
+    } catch (e) {
+      console.error('Failed to fetch profile:', e);
+      setProfileText('Could not load profile. Is the server running?');
+      setEditedProfileText('');
+    }
+    setProfileLoading(false);
+  }, []);
+
+  const saveProfile = useCallback(async () => {
+    setProfileSaving(true);
+    try {
+      await fetch(`${SERVER_BASE}/chat/profile/${DEVICE_TOKEN}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profile: editedProfileText }),
+      });
+      setProfileText(editedProfileText);
+      setIsEditing(false);
+    } catch (e) {
+      console.error('Failed to save profile:', e);
+    }
+    setProfileSaving(false);
+  }, [editedProfileText]);
+
+  const openMemoryModal = useCallback(() => {
+    setShowMemoryModal(true);
+    setIsEditing(false);
+    fetchProfile();
+  }, [fetchProfile]);
+
   // ──── Voice interaction Loop ────
   const sendAudioToServer = async (uri: string) => {
-    const SERVER_URL = 'http://192.168.1.69:8000/chat/voice';
+    const SERVER_BASE = 'http://192.168.1.69:8000';
+    const SERVER_URL = `${SERVER_BASE}/chat/voice`;
     const formData = new FormData();
     const fileType = uri.split('.').pop() || 'caf';
     formData.append('file', { uri, name: `audio.${fileType}`, type: `audio/${fileType}` } as any);
@@ -301,9 +350,14 @@ export default function HomeScreen() {
             {appState === 'recording' ? 'Listening privately' : 'Private by default'}
           </Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={playTap}>
-          <Ionicons name="settings-outline" size={24} color={Theme.colors.textSecondary} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+          <TouchableOpacity onPress={openMemoryModal}>
+            <MaterialCommunityIcons name="brain" size={24} color={Theme.colors.textSecondary} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={playTap}>
+            <Ionicons name="settings-outline" size={24} color={Theme.colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.mainContent}>
@@ -441,9 +495,9 @@ export default function HomeScreen() {
             </View>
             <Text style={styles.modalTitle}>Please reach out</Text>
             <Text style={styles.modalSubCenter}>Your safety is the most important thing. There are people available right now who are trained to help you through this.</Text>
-            
-            <TouchableOpacity 
-              style={[styles.modalCloseBtn, { backgroundColor: '#D32F2F', marginBottom: 12 }]} 
+
+            <TouchableOpacity
+              style={[styles.modalCloseBtn, { backgroundColor: '#D32F2F', marginBottom: 12 }]}
               onPress={() => {
                 Linking.openURL('tel:1144'); // Standard Nepal Crisis Hotline
                 setShowLevel3Modal(false);
@@ -456,6 +510,87 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
         </View>
+      </Modal>
+
+      {/* --- MEMORY / PROFILE MODAL --- */}
+      <Modal visible={showMemoryModal} animationType="slide" transparent={true} onRequestClose={() => setShowMemoryModal(false)}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={styles.memoryOverlay}>
+            <View style={styles.memorySheet}>
+              <View style={styles.memoryHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <MaterialCommunityIcons name="brain" size={22} color={Theme.colors.mascotCoral} />
+                  <Text style={styles.memoryTitle}>Sathi's Memory</Text>
+                </View>
+                <TouchableOpacity onPress={() => setShowMemoryModal(false)}>
+                  <Ionicons name="close" size={24} color={Theme.colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.memorySubtitle}>
+                What Sathi remembers about you. This helps personalize your conversations.
+              </Text>
+
+              {profileLoading ? (
+                <View style={styles.memoryLoadingContainer}>
+                  <ActivityIndicator size="large" color={Theme.colors.mascotCoral} />
+                </View>
+              ) : isEditing ? (
+                <ScrollView style={styles.memoryScrollView} keyboardShouldPersistTaps="handled">
+                  <TextInput
+                    style={styles.memoryTextInput}
+                    value={editedProfileText}
+                    onChangeText={setEditedProfileText}
+                    multiline
+                    autoFocus
+                    textAlignVertical="top"
+                    placeholder="Add details about yourself..."
+                    placeholderTextColor={Theme.colors.textTertiary}
+                  />
+                </ScrollView>
+              ) : (
+                <ScrollView style={styles.memoryScrollView}>
+                  <Text style={styles.memoryContent}>{profileText}</Text>
+                </ScrollView>
+              )}
+
+              <View style={styles.memoryActions}>
+                {isEditing ? (
+                  <>
+                    <TouchableOpacity
+                      style={styles.memoryCancelBtn}
+                      onPress={() => {
+                        setEditedProfileText(profileText);
+                        setIsEditing(false);
+                      }}
+                    >
+                      <Text style={styles.memoryCancelText}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.memorySaveBtn}
+                      onPress={saveProfile}
+                      disabled={profileSaving}
+                    >
+                      {profileSaving ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <Text style={styles.memorySaveText}>Save</Text>
+                      )}
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.memoryEditBtn}
+                    onPress={() => setIsEditing(true)}
+                  >
+                    <Ionicons name="create-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.memorySaveText}>Edit Memory</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
 
     </View>
@@ -501,4 +636,21 @@ const styles = StyleSheet.create({
   glowRingModal: { position: 'absolute', width: 140, height: 140, borderRadius: 70, backgroundColor: Theme.colors.surfaceSoft },
   modalCloseBtn: { backgroundColor: Theme.colors.mascotCoral, paddingVertical: 14, width: '100%', borderRadius: 25, alignItems: 'center' },
   modalCloseText: { color: '#FFFFFF', fontWeight: '600', fontSize: 16 },
+
+  // Memory Modal
+  memoryOverlay: { flex: 1, backgroundColor: 'rgba(70, 42, 38, 0.4)', justifyContent: 'flex-end' },
+  memorySheet: { backgroundColor: Theme.colors.background, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 40, maxHeight: '85%' },
+  memoryHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  memoryTitle: { fontSize: 20, fontWeight: '700', color: Theme.colors.textPrimary, marginLeft: 8 },
+  memorySubtitle: { fontSize: 13, color: Theme.colors.textTertiary, marginBottom: 16, lineHeight: 18 },
+  memoryLoadingContainer: { height: 200, alignItems: 'center', justifyContent: 'center' },
+  memoryScrollView: { maxHeight: 350, marginBottom: 16 },
+  memoryContent: { fontSize: 15, color: Theme.colors.textSecondary, lineHeight: 24 },
+  memoryTextInput: { fontSize: 15, color: Theme.colors.textPrimary, lineHeight: 24, backgroundColor: Theme.colors.surface, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: Theme.colors.divider, minHeight: 200 },
+  memoryActions: { flexDirection: 'row', gap: 12 },
+  memoryEditBtn: { flex: 1, flexDirection: 'row', backgroundColor: Theme.colors.mascotCoral, paddingVertical: 14, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
+  memoryCancelBtn: { flex: 1, backgroundColor: Theme.colors.surfaceSoft, paddingVertical: 14, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
+  memoryCancelText: { color: Theme.colors.textSecondary, fontWeight: '600', fontSize: 16 },
+  memorySaveBtn: { flex: 1, backgroundColor: Theme.colors.mascotCoral, paddingVertical: 14, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
+  memorySaveText: { color: '#FFFFFF', fontWeight: '600', fontSize: 16 },
 });
