@@ -21,7 +21,57 @@ export interface RegionalSupport {
 }
 
 export const SUPPORT_REGIONS: Record<string, RegionalSupport> = {
-  // ─── MIDDLE EAST ───
+  US: {
+    countryCode: 'US',
+    countryName: 'United States',
+    emergencyPolice: '911',
+    emergencyMedical: '911',
+    mentalHealth: [
+      { name: 'Suicide & Crisis Lifeline', number: '988', description: 'Available 24/7 (Call or Text)' },
+      { name: 'Crisis Text Line', number: '741741', description: 'Text HOME to 741741' },
+      { name: 'SAMHSA National Helpline', number: '1-800-662-4357', description: 'Referral & info service' },
+    ],
+    embassy: {
+      address: '2730 34th Place, NW, Washington, DC 20007',
+      phone: '+1 202 774 4780',
+      email: 'info@nepalembassyusa.org',
+      website: 'https://us.nepalembassy.gov.np',
+    },
+  },
+  GB: {
+    countryCode: 'GB',
+    countryName: 'United Kingdom',
+    emergencyPolice: '999',
+    emergencyMedical: '999',
+    mentalHealth: [
+      { name: 'Samaritans', number: '116 123', description: 'Free, available 24/7' },
+      { name: 'NHS Urgent Mental Health', number: '111', description: 'Call 111 & select mental health option (2)' },
+      { name: 'Shout Crisis Text Line', number: '85258', description: 'Text SHOUT to 85258' },
+    ],
+    embassy: {
+      address: '12A Kensington Palace Gardens, London W8 4QU',
+      phone: '+44 207 229 1594',
+      email: 'info@nepembassy.org.uk',
+      website: 'https://uk.nepalembassy.gov.np',
+    },
+  },
+  AU: {
+    countryCode: 'AU',
+    countryName: 'Australia',
+    emergencyPolice: '000',
+    emergencyMedical: '000',
+    mentalHealth: [
+      { name: 'Lifeline', number: '13 11 14', description: 'Available 24/7' },
+      { name: 'Beyond Blue', number: '1300 22 4636', description: 'Available 24/7 Support' },
+      { name: 'Suicide Call Back Service', number: '1300 659 467', description: '24/7 Counselling' },
+    ],
+    embassy: {
+      address: '22 Kareelah Vista, O\'Malley, Canberra ACT 2606',
+      phone: '+61 02 6286 8006',
+      email: 'eoncanberra@mofa.gov.np',
+      website: 'https://au.nepalembassy.gov.np',
+    },
+  },
   AE: {
     countryCode: 'AE',
     countryName: 'United Arab Emirates',
