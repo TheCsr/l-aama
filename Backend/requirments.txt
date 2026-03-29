@@ -6,4 +6,4 @@ python-dotenv
 pydantic
 fastapi-cors
 groq
-dortenv
+google-genai

@@ -28,10 +28,14 @@
 - See active community counts and live status indicators
 - Floating action button to compose new discussion threads
 
-### 🆘 Support Directory
-- Curated list of trusted organisations, counsellors, and helplines
-- **Urgent help** card with one-tap dialler integration
-- Category chips for quick filtering (Volunteers, NGOs, Student support, etc.)
+### 🆘 Support Directory (IP Geolocation)
+- Automatically detects the user's country to provide localized help
+- **22-Country Coverage** including major diaspora destinations (Middle East, USA, UK, Australia, India, Malaysia, Japan, etc.)
+- Dynamically shows the local emergency/medical dialing numbers (e.g. 911, 999, 112, 000)
+- Curated list of trusted mental health lines mapping to the user's specific region
+- **Nepal Embassy Tracker** displays the local embassy/consulate contact and address with one-tap dialing
+- Graceful "International Dropback" to the Ministry of Foreign Affairs if the detected country is unmapped
+- *Future Goal:* We strongly wish to add direct contacts for local Nepali community centers and diaspora organizations to this database, which is currently deferred due to hackathon time constraints.
 
 ### 🔊 Sound Design & Haptics
 - Soft tap sounds on every UI interaction

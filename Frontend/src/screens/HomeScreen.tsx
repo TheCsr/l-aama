@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Animated, Image, Pressable, Modal, Linking } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Animated, Image, Pressable, Modal, Linking, ScrollView } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
 import { Theme } from '../constants/Theme';
 
@@ -18,10 +18,58 @@ export default function HomeScreen() {
   const [appState, setAppState] = useState<AppState>('idle');
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [transcript, setTranscript] = useState<string>('');
+  const [userMemory, setUserMemory] = useState<string>('');
+  const escalationCount = useRef(0); // Track consecutive elevated responses
+
+  const MEMORY_FILE_URI = `${FileSystem.documentDirectory}user_profile.md`;
+
+  const loadMemory = async () => {
+    try {
+      const fileInfo = await FileSystem.getInfoAsync(MEMORY_FILE_URI);
+      if (fileInfo.exists) {
+        const content = await FileSystem.readAsStringAsync(MEMORY_FILE_URI);
+        setUserMemory(content);
+      } else {
+        const initialProfile = `# User Profile & Memory\n\nThis document contains facts and recent conversation history.\n\n## Chat History\n`;
+        await FileSystem.writeAsStringAsync(MEMORY_FILE_URI, initialProfile);
+        setUserMemory(initialProfile);
+      }
+    } catch (e) {
+      console.warn('Failed to load memory:', e);
+    }
+  };
+
+  const updateMemoryFromBackend = async (memoryUpdate: string) => {
+    try {
+      await FileSystem.writeAsStringAsync(MEMORY_FILE_URI, memoryUpdate);
+      setUserMemory(memoryUpdate);
+      console.log('✅ Memory updated from backend summariser');
+    } catch (e) {
+      console.warn('Failed to save backend memory:', e);
+    }
+  };
+
+  const appendToMemory = async (userText: string, botText: string) => {
+    try {
+      const newEntry = `\n**User:** ${userText}\n**Sathi:** ${botText}\n`;
+      let currentMemory = userMemory + newEntry;
+      
+      if (currentMemory.length > 3000) {
+          const header = `# User Profile & Memory\n\nThis document contains facts and recent conversation history.\n\n## Chat History\n`;
+          currentMemory = header + currentMemory.slice(-2000);
+      }
+
+      await FileSystem.writeAsStringAsync(MEMORY_FILE_URI, currentMemory);
+      setUserMemory(currentMemory);
+    } catch (e) {
+      console.warn('Failed to save memory:', e);
+    }
+  };
 
   // Modals & Interactive states
   const [showAudioSheet, setShowAudioSheet] = useState(false);
   const [isPlaying432, setIsPlaying432] = useState(false);
+  const [showMemoryModal, setShowMemoryModal] = useState(false);
 
   // --- NEW: Escalation Modal States ---
   const [showLevel2Modal, setShowLevel2Modal] = useState(false);
@@ -73,6 +121,10 @@ export default function HomeScreen() {
       patSoundRef.current?.unloadAsync();
       calmSoundRef.current?.unloadAsync();
     };
+  }, []);
+
+  useEffect(() => {
+    loadMemory();
   }, []);
 
   // ──── Breathing glow animation ────
@@ -140,10 +192,13 @@ export default function HomeScreen() {
 
   // ──── Voice interaction Loop ────
   const sendAudioToServer = async (uri: string) => {
-    const SERVER_URL = 'http://192.168.1.69:8000/chat/voice';
+    const SERVER_URL = 'http://192.168.1.222:8000/chat/voice';
     const formData = new FormData();
     const fileType = uri.split('.').pop() || 'caf';
     formData.append('file', { uri, name: `audio.${fileType}`, type: `audio/${fileType}` } as any);
+    if (userMemory) {
+      formData.append('memory', userMemory);
+    }
 
     try {
       const response = await fetch(SERVER_URL, {
@@ -157,28 +212,46 @@ export default function HomeScreen() {
 
       setAppState('reflection');
       setTranscript(data.response || '...');
+
+      // Prefer backend-summarised memory, fallback to raw append
+      if (data.memory_update) {
+        await updateMemoryFromBackend(data.memory_update);
+      } else if (data.user_input && data.response) {
+        appendToMemory(data.user_input, data.response);
+      } else if (data.translated_input && data.response) {
+        appendToMemory(data.translated_input, data.response);
+      }
       playTap();
 
       // --- ESCALATION LOGIC ---
-      // Get the level from the JSON, default to 1 if not present
+      // Only show modals after CONSECUTIVE elevated responses
+      // This prevents over-triggering on a single sad message
       const level = data.escalation_level || 1;
       
-      if (level === 2) {
-        // Wait 2 seconds for Sathi's audio to start before showing the modal
+      if (level >= 2) {
+        escalationCount.current += 1;
+      } else {
+        escalationCount.current = 0; // Reset on mild response
+      }
+
+      // Level 2: Show after 2+ consecutive moderate responses
+      if (level === 2 && escalationCount.current >= 2) {
         setTimeout(() => setShowLevel2Modal(true), 2000); 
-      } else if (level === 3) {
-        // Wait 2 seconds before showing the crisis hotline modal
+      }
+      // Level 3: Show after 2+ consecutive critical responses (or immediately if crisis keywords)
+      else if (level === 3 && escalationCount.current >= 2) {
         setTimeout(() => setShowLevel3Modal(true), 2000);
       }
-      // -----------------------------
+      // ---
 
-      // --- ELEVENLABS AUDIO RECEIVER ---
+      // --- GEMINI TTS AUDIO RECEIVER ---
       if (data.audio_base64) {
+        console.log('🎙️ TTS USED: Gemini TTS (gemini-2.5-flash-preview-tts)');
         const fs: any = FileSystem; 
         const dir = fs.cacheDirectory || fs.documentDirectory;
         if (!dir) return; 
 
-        const tempUri = `${dir}sathi_response.mp3`;
+        const tempUri = `${dir}sathi_response.wav`;
         await fs.writeAsStringAsync(tempUri, data.audio_base64, { encoding: fs.EncodingType.Base64 });
         await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true, playThroughEarpieceAndroid: false });
 
@@ -192,6 +265,7 @@ export default function HomeScreen() {
       } 
       // --- GOOGLE TRANSLATE STREAMING FALLBACK ---
       else if (data.response) {
+        console.log('🔊 TTS USED: Google Translate TTS (fallback)');
         const cleanText = data.response
           .replace(/<[^>]*>/g, '') 
           .replace(/[\[\]{}]/g, '')
@@ -201,24 +275,30 @@ export default function HomeScreen() {
 
         const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=ne&client=tw-ob&q=${encodeURIComponent(cleanText)}`;
 
-        await Audio.setAudioModeAsync({
-            allowsRecordingIOS: false,
-            playsInSilentModeIOS: true,
-            staysActiveInBackground: false,
-            shouldDuckAndroid: true,
-            playThroughEarpieceAndroid: false,
-        });
+        try {
+          await Audio.setAudioModeAsync({
+              allowsRecordingIOS: false,
+              playsInSilentModeIOS: true,
+              staysActiveInBackground: false,
+              shouldDuckAndroid: true,
+              playThroughEarpieceAndroid: false,
+          });
 
-        const { sound } = await Audio.Sound.createAsync(
-            { uri: ttsUrl },
-            { shouldPlay: true }
-        );
+          const { sound } = await Audio.Sound.createAsync(
+              { uri: ttsUrl },
+              { shouldPlay: true }
+          );
 
-        sound.setOnPlaybackStatusUpdate(async (status: any) => {
-            if (status.isLoaded && status.didJustFinish) {
-                await sound.unloadAsync();
-            }
-        });
+          sound.setOnPlaybackStatusUpdate(async (status: any) => {
+              if (status.isLoaded && status.didJustFinish) {
+                  await sound.unloadAsync();
+              }
+          });
+        } catch (ttsError) {
+          console.warn('Google TTS failed, falling back to local Speech:', ttsError);
+          console.log('📢 TTS USED: expo-speech local (last resort fallback)');
+          Speech.speak(cleanText, { language: 'ne-NP', rate: 0.85, pitch: 0.85 });
+        }
       }
     } catch (error) {
       console.warn('Server unreachable:', error);
@@ -301,9 +381,14 @@ export default function HomeScreen() {
             {appState === 'recording' ? 'Listening privately' : 'Private by default'}
           </Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={playTap}>
-          <Ionicons name="settings-outline" size={24} color={Theme.colors.textSecondary} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 16 }}>
+          <TouchableOpacity onPress={() => { playTap(); setShowMemoryModal(true); }}>
+            <MaterialCommunityIcons name="brain" size={24} color={Theme.colors.textSecondary} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={playTap}>
+            <Ionicons name="settings-outline" size={24} color={Theme.colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.mainContent}>
@@ -453,6 +538,34 @@ export default function HomeScreen() {
 
             <TouchableOpacity onPress={() => setShowLevel3Modal(false)} style={{ paddingVertical: 10 }}>
               <Text style={[styles.modalCloseText, { color: Theme.colors.textSecondary }]}>I am safe, close this</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* --- MEMORY MODAL --- */}
+      <Modal visible={showMemoryModal} animationType="slide" transparent={true} onRequestClose={() => setShowMemoryModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalSheet, { height: '80%' }]}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Sathi's Memory Model</Text>
+            <ScrollView style={{ width: '100%', marginBottom: 20 }}>
+              <Text style={{ color: Theme.colors.textPrimary, fontSize: 16, lineHeight: 24 }}>{userMemory}</Text>
+            </ScrollView>
+            <TouchableOpacity 
+              style={styles.modalCloseBtn}
+              onPress={async () => {
+                playTap();
+                const initialProfile = `# User Profile & Memory\n\nThis document contains facts and recent conversation history.\n\n## Chat History\n`;
+                await FileSystem.writeAsStringAsync(MEMORY_FILE_URI, initialProfile);
+                setUserMemory(initialProfile);
+                setShowMemoryModal(false);
+              }}
+            >
+              <Text style={styles.modalCloseText}>Clear Memory Database</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowMemoryModal(false)} style={{ paddingVertical: 15 }}>
+              <Text style={[styles.modalCloseText, { color: Theme.colors.mascotCocoa }]}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
