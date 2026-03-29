@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Animated, Image, Pressable, Modal } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Animated, Image, Pressable, Modal, Linking } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
@@ -21,7 +21,11 @@ export default function HomeScreen() {
 
   // Modals & Interactive states
   const [showAudioSheet, setShowAudioSheet] = useState(false);
-  const [isPlaying432, setIsPlaying432] = useState(false); 
+  const [isPlaying432, setIsPlaying432] = useState(false);
+
+  // --- NEW: Escalation Modal States ---
+  const [showLevel2Modal, setShowLevel2Modal] = useState(false);
+  const [showLevel3Modal, setShowLevel3Modal] = useState(false);
 
   // Sounds refs
   const tapSoundRef = useRef<Audio.Sound | null>(null);
@@ -155,8 +159,39 @@ export default function HomeScreen() {
       setTranscript(data.response || '...');
       playTap();
 
-      if (data.response) {
-        // 1. Clean the text to ensure the URL doesn't break
+      // --- ESCALATION LOGIC ---
+      // Get the level from the JSON, default to 1 if not present
+      const level = data.escalation_level || 1;
+      
+      if (level === 2) {
+        // Wait 2 seconds for Sathi's audio to start before showing the modal
+        setTimeout(() => setShowLevel2Modal(true), 2000); 
+      } else if (level === 3) {
+        // Wait 2 seconds before showing the crisis hotline modal
+        setTimeout(() => setShowLevel3Modal(true), 2000);
+      }
+      // -----------------------------
+
+      // --- ELEVENLABS AUDIO RECEIVER ---
+      if (data.audio_base64) {
+        const fs: any = FileSystem; 
+        const dir = fs.cacheDirectory || fs.documentDirectory;
+        if (!dir) return; 
+
+        const tempUri = `${dir}sathi_response.mp3`;
+        await fs.writeAsStringAsync(tempUri, data.audio_base64, { encoding: fs.EncodingType.Base64 });
+        await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true, playThroughEarpieceAndroid: false });
+
+        const { sound } = await Audio.Sound.createAsync({ uri: tempUri }, { shouldPlay: true });
+        sound.setOnPlaybackStatusUpdate(async (status: any) => {
+          if (status.isLoaded && status.didJustFinish) {
+            await sound.unloadAsync();
+            await fs.deleteAsync(tempUri, { idempotent: true });
+          }
+        });
+      } 
+      // --- GOOGLE TRANSLATE STREAMING FALLBACK ---
+      else if (data.response) {
         const cleanText = data.response
           .replace(/<[^>]*>/g, '') 
           .replace(/[\[\]{}]/g, '')
@@ -164,11 +199,8 @@ export default function HomeScreen() {
           
         console.log("2. Text sent to Cloud API:", cleanText);
 
-        // 2. THE API HACK: Encode the Nepali text into the Google Translate TTS URL
-        // tl=ne means "Target Language = Nepali"
         const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=ne&client=tw-ob&q=${encodeURIComponent(cleanText)}`;
 
-        // 3. Unlock the main speakers
         await Audio.setAudioModeAsync({
             allowsRecordingIOS: false,
             playsInSilentModeIOS: true,
@@ -177,13 +209,11 @@ export default function HomeScreen() {
             playThroughEarpieceAndroid: false,
         });
 
-        // 4. Stream the MP3 directly from the API!
         const { sound } = await Audio.Sound.createAsync(
             { uri: ttsUrl },
             { shouldPlay: true }
         );
 
-        // Clean up memory after the audio finishes playing
         sound.setOnPlaybackStatusUpdate(async (status: any) => {
             if (status.isLoaded && status.didJustFinish) {
                 await sound.unloadAsync();
@@ -196,7 +226,6 @@ export default function HomeScreen() {
       const fallbackText = 'मेरो सिस्टममा केही समस्या छ।';
       setTranscript(fallbackText);
       
-      // Fallback API call for the error message
       const fallbackUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=ne&client=tw-ob&q=${encodeURIComponent(fallbackText)}`;
       try {
         await Audio.setAudioModeAsync({
@@ -214,7 +243,6 @@ export default function HomeScreen() {
         });
       } catch (e) { 
         console.error("Fallback audio failed", e); 
-        // Absolute last resort
         Speech.speak(fallbackText, { language: 'ne-NP', rate: 0.85, pitch: 0.85 });
       }
     }
@@ -377,6 +405,59 @@ export default function HomeScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* --- LEVEL 2 ESCALATION MODAL (FRIENDS/FAMILY) --- */}
+      <Modal visible={showLevel2Modal} animationType="fade" transparent={true} onRequestClose={() => setShowLevel2Modal(false)}>
+        <View style={styles.urgentOverlay}>
+          <View style={styles.escalationSheet}>
+            <View style={[styles.iconCircle, { backgroundColor: Theme.colors.mascotPeach }]}>
+              <Ionicons name="people" size={32} color={Theme.colors.mascotCocoa} />
+            </View>
+            <Text style={styles.modalTitle}>You are not alone</Text>
+            <Text style={styles.modalSubCenter}>It sounds like you're carrying a lot right now. Sometimes a quick text to a friend or family member can help ground you.</Text>
+            
+            <TouchableOpacity 
+              style={[styles.modalCloseBtn, { backgroundColor: Theme.colors.mascotCocoa, marginBottom: 12 }]} 
+              onPress={() => {
+                Linking.openURL('sms:?body=Hey, I am having a tough time right now. Do you have a few minutes to talk?');
+                setShowLevel2Modal(false);
+              }}>
+              <Text style={styles.modalCloseText}>Text a Loved One</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => setShowLevel2Modal(false)} style={{ paddingVertical: 10 }}>
+              <Text style={[styles.modalCloseText, { color: Theme.colors.mascotCocoa }]}>Not right now</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* --- LEVEL 3 ESCALATION MODAL (CRISIS HOTLINE) --- */}
+      <Modal visible={showLevel3Modal} animationType="fade" transparent={true} onRequestClose={() => setShowLevel3Modal(false)}>
+        <View style={styles.urgentOverlay}>
+          <View style={styles.escalationSheet}>
+            <View style={[styles.iconCircle, { backgroundColor: '#FFD7D7' }]}>
+              <Ionicons name="warning" size={32} color="#D32F2F" />
+            </View>
+            <Text style={styles.modalTitle}>Please reach out</Text>
+            <Text style={styles.modalSubCenter}>Your safety is the most important thing. There are people available right now who are trained to help you through this.</Text>
+            
+            <TouchableOpacity 
+              style={[styles.modalCloseBtn, { backgroundColor: '#D32F2F', marginBottom: 12 }]} 
+              onPress={() => {
+                Linking.openURL('tel:1144'); // Standard Nepal Crisis Hotline
+                setShowLevel3Modal(false);
+              }}>
+              <Text style={styles.modalCloseText}>Call Hotline (1144)</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => setShowLevel3Modal(false)} style={{ paddingVertical: 10 }}>
+              <Text style={[styles.modalCloseText, { color: Theme.colors.textSecondary }]}>I am safe, close this</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 }
@@ -406,9 +487,16 @@ const styles = StyleSheet.create({
   reflectionTitle: { color: Theme.colors.textPrimary, fontSize: 18, fontWeight: '600', marginBottom: 12 },
   reflectionBody: { color: Theme.colors.textSecondary, fontSize: 16, lineHeight: 24 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(70, 42, 38, 0.4)', justifyContent: 'flex-end' },
+  
+  // --- NEW STYLES FOR ESCALATION MODALS ---
+  urgentOverlay: { flex: 1, backgroundColor: 'rgba(30, 20, 18, 0.7)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   modalSheet: { backgroundColor: Theme.colors.background, borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, paddingBottom: 40, alignItems: 'center' },
+  escalationSheet: { width: '100%', backgroundColor: Theme.colors.background, borderRadius: 24, padding: 24, alignItems: 'center', elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.2, shadowRadius: 20 },
   modalHandle: { width: 40, height: 5, borderRadius: 3, backgroundColor: Theme.colors.divider, marginBottom: 20 },
+  iconCircle: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
   modalTitle: { color: Theme.colors.textPrimary, fontSize: 22, fontWeight: '700', marginBottom: 8 },
+  modalSubCenter: { color: Theme.colors.textSecondary, fontSize: 15, marginBottom: 24, textAlign: 'center', lineHeight: 22 },
+  
   audioVisualizerPlaceholder: { height: 140, alignItems: 'center', justifyContent: 'center', marginBottom: 40 },
   glowRingModal: { position: 'absolute', width: 140, height: 140, borderRadius: 70, backgroundColor: Theme.colors.surfaceSoft },
   modalCloseBtn: { backgroundColor: Theme.colors.mascotCoral, paddingVertical: 14, width: '100%', borderRadius: 25, alignItems: 'center' },
