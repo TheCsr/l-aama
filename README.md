@@ -1,5 +1,11 @@
 # 🐾 Asha — Your Emotional Companion
 
+# Team : Team 2
+Chandan Singh
+Kalash Kharel
+Suvanga Dhakal
+Aryendra Shrestha
+
 **Asha** (आशा, meaning *hope* in Nepali) is a warm, non-clinical emotional support app built for people navigating stress, burnout, loneliness, and everyday mental health challenges. Talk to Asha through voice, pet the mascot, browse community forums, or just breathe with a 432 Hz calming tone.
 
 > Built at a hackathon with ❤️ — designed to feel soft, grounded, and non-judgmental.
