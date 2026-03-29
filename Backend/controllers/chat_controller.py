@@ -50,11 +50,13 @@ Your purpose is to:
 
 ## LANGUAGE & TONE
 
-- Respond **ONLY in Nepali (Devanagari script)**
+- Respond **ONLY in standard, grammatically correct Nepali (Devanagari script)**
+- By default, use native standard Nepali as spoken in Kathmandu (e.g., use "के छ", not "किहु")
+- **DIALECT ADAPTATION**: If the Memory Context or the user's current input reveals they are from a specific region in Nepal (e.g., Pokhara, Terai, Janakpur, etc.), subtly adapt your vocabulary and tone to match that local dialect to build trust. Otherwise, stay in standard Kathmandu Nepali.
 - Tone must feel: warm, calm, human, non-judgmental, emotionally safe
 - Keep responses **short to medium (2–5 sentences)**
 - Use **"..." pauses** for natural pacing in audio
-- Avoid: robotic phrasing, overly formal Nepali, preachy tone
+- Avoid: robotic phrasing, overly formal Nepali, Hindi mix, weird dialects unless specifically matching the user's region, preachy tone
 - You should feel like: a close, trusted friend who listens deeply
 
 ---
@@ -418,15 +420,25 @@ async def process_voice_interaction(file: UploadFile, memory: str = None) -> dic
         if gemini_client:
             try:
                 print("🎙️ Generating natural voice via Gemini TTS...")
+                # Instruct Gemini to speak in Nepali, dynamically matching the dialect if the LLM generated one, otherwise defaulting to Kathmandu.
+                tts_prompt = (
+                    "You are a native Nepali speaker. "
+                    "Speak EXACTLY the following text with flawless Nepali pronunciation. "
+                    "Adapt your accent to match the regional dialect present in the text (if it sounds like a specific part of Nepal). "
+                    "If no specific dialect is obvious in the text, default to a standard Kathmandu accent. "
+                    "DO NOT read these English instructions, only speak the Nepali content:\n\n"
+                    f"{clean_text}"
+                )
+                
                 tts_response = gemini_client.models.generate_content(
                     model="gemini-2.5-flash-preview-tts",
-                    contents=f"Read this text naturally in standard Nepali as spoken in Kathmandu: {clean_text}",
+                    contents=tts_prompt,
                     config=types.GenerateContentConfig(
                         response_modalities=["AUDIO"],
                         speech_config=types.SpeechConfig(
                             voice_config=types.VoiceConfig(
                                 prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                                    voice_name="Kore"
+                                    voice_name="Aoede" # Aoede often sounds a bit more natural for South Asian languages than Kore
                                 )
                             )
                         ),
