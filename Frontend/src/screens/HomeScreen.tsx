@@ -244,13 +244,14 @@ export default function HomeScreen() {
       }
       // ---
 
-      // --- ELEVENLABS AUDIO RECEIVER ---
+      // --- GEMINI TTS AUDIO RECEIVER ---
       if (data.audio_base64) {
+        console.log('🎙️ TTS USED: Gemini TTS (gemini-2.5-flash-preview-tts)');
         const fs: any = FileSystem; 
         const dir = fs.cacheDirectory || fs.documentDirectory;
         if (!dir) return; 
 
-        const tempUri = `${dir}sathi_response.mp3`;
+        const tempUri = `${dir}sathi_response.wav`;
         await fs.writeAsStringAsync(tempUri, data.audio_base64, { encoding: fs.EncodingType.Base64 });
         await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true, playThroughEarpieceAndroid: false });
 
@@ -264,6 +265,7 @@ export default function HomeScreen() {
       } 
       // --- GOOGLE TRANSLATE STREAMING FALLBACK ---
       else if (data.response) {
+        console.log('🔊 TTS USED: Google Translate TTS (fallback)');
         const cleanText = data.response
           .replace(/<[^>]*>/g, '') 
           .replace(/[\[\]{}]/g, '')
@@ -294,6 +296,7 @@ export default function HomeScreen() {
           });
         } catch (ttsError) {
           console.warn('Google TTS failed, falling back to local Speech:', ttsError);
+          console.log('📢 TTS USED: expo-speech local (last resort fallback)');
           Speech.speak(cleanText, { language: 'ne-NP', rate: 0.85, pitch: 0.85 });
         }
       }

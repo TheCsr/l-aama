@@ -1,15 +1,22 @@
 import os
+import io
 import json
+import wave
 import httpx
 import base64
 from fastapi import UploadFile
 from groq import Groq
+from google import genai
+from google.genai import types
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-elevenlabs_key = os.getenv("ELEVENLABS_API_KEY")
+
+# Gemini TTS client
+gemini_api_key = os.getenv("GEMINI_API_KEY")
+gemini_client = genai.Client(api_key=gemini_api_key) if gemini_api_key else None
 
 # Chandan's local LLM endpoint (Ngrok)
 CHANDAN_ENDPOINT = "https://ungiving-organismic-elizbeth.ngrok-free.dev/chat"
@@ -405,38 +412,49 @@ async def process_voice_interaction(file: UploadFile, memory: str = None) -> dic
             print(f"⚠️ Memory update failed (non-critical): {e}")
 
         # ==========================================
-        # 7. ELEVENLABS AUDIO GENERATION
+        # 7. GEMINI TTS AUDIO GENERATION
         # ==========================================
         audio_base64 = None
-        if elevenlabs_key:
-            voice_id = "21m00Tcm4TlvDq8ikWAM" 
-            tts_url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
-            
-            headers = {
-                "Accept": "audio/mpeg",
-                "Content-Type": "application/json",
-                "xi-api-key": elevenlabs_key
-            }
-            
-            payload = {
-                "text": clean_text,
-                "model_id": "eleven_multilingual_v2",
-                "voice_settings": {
-                    "stability": 0.45,
-                    "similarity_boost": 0.75
-                }
-            }
-            
+        if gemini_client:
             try:
-                print("Generating soothing voice via ElevenLabs...")
-                async with httpx.AsyncClient() as http_client:
-                    tts_response = await http_client.post(tts_url, json=payload, headers=headers, timeout=15.0)
-                    tts_response.raise_for_status()
-                    
-                    audio_base64 = base64.b64encode(tts_response.content).decode('utf-8')
-                    print("✅ ElevenLabs Audio Generated Successfully!")
+                print("🎙️ Generating natural voice via Gemini TTS...")
+                tts_response = gemini_client.models.generate_content(
+                    model="gemini-2.5-flash-preview-tts",
+                    contents=f"Say the following in Nepali language (नेपाली): {clean_text}",
+                    config=types.GenerateContentConfig(
+                        response_modalities=["AUDIO"],
+                        speech_config=types.SpeechConfig(
+                            voice_config=types.VoiceConfig(
+                                prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                    voice_name="Kore"
+                                )
+                            )
+                        ),
+                    ),
+                )
+
+                # Extract raw PCM data from response
+                pcm_data = None
+                for part in tts_response.candidates[0].content.parts:
+                    if part.inline_data:
+                        pcm_data = part.inline_data.data
+                        break
+
+                if pcm_data:
+                    # Convert PCM to WAV in-memory then base64 encode
+                    wav_buffer = io.BytesIO()
+                    with wave.open(wav_buffer, "wb") as wf:
+                        wf.setnchannels(1)       # Mono
+                        wf.setsampwidth(2)       # 16-bit
+                        wf.setframerate(24000)   # 24kHz
+                        wf.writeframes(pcm_data)
+                    audio_base64 = base64.b64encode(wav_buffer.getvalue()).decode('utf-8')
+                    print("✅ Gemini TTS Audio Generated Successfully!")
+                else:
+                    print("⚠️ Gemini TTS returned no audio data")
+
             except Exception as e:
-                print(f"ElevenLabs generation failed: {e}")
+                print(f"⚠️ Gemini TTS generation failed: {e}")
 
         # ==========================================
         # 8. RETURN FINAL JSON TO FRONTEND
