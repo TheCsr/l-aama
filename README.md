@@ -110,7 +110,7 @@ pip install -r requirments.txt
 
 # Set your Groq API key
 echo "GROQ_API_KEY=your_key_here" > .env
-
+echo "GEMINI_API_KEY=your_key_here" > .env
 # Run the server
 python main.py
 ```
