@@ -10,8 +10,8 @@
 
 ### 🎙️ Voice Conversations
 - Tap the central mic button to talk to Asha
-- Powered by **Groq Whisper** (speech-to-text) and **LLaMA 3.3 70B** (empathetic AI responses)
-- Asha responds with a spoken voice reply and a reflection card highlighting what she noticed
+- Powered by **Groq Whisper** (speech-to-text), local **NLLB** (CTranslate2 int8_float16 for Nepali/regional language translation to English), and **DeepSeek R1** via Ollama (reasoning and empathetic AI responses)
+- Asha responds with a spoken voice reply and a reflection card highlighting what she noticed, including user categorization by mental health levels based on chat history
 
 ### 🐼 Interactive Mascot
 - A friendly red panda wearing a traditional **Nepali Dhaka topi** sits atop the mic
@@ -57,6 +57,9 @@ l-aama/
 │
 ├── Backend/           # FastAPI server
 │   └── main.py        # Voice endpoint (/chat/voice)
+│
+├── LLM-Brain/         # FastAPI server for multilingual LLM chat
+│   └── main.py        # Chat endpoint (/chat) with NLLB translation and LLM reasoning deepseek model
 │
 └── design.md          # Full product & visual design spec
 ```
@@ -126,6 +129,29 @@ In `Frontend/src/screens/HomeScreen.tsx`, update the server URL to your machine'
 const SERVER_URL = 'http://<YOUR_LOCAL_IP>:8000/chat/voice';
 ```
 
+### 4. Start the LLM-Brain
+
+```bash
+cd LLM-brain    
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Download and convert NLLB model to CTranslate2
+ct2-transformers-converter --model facebook/nllb-200-distilled-600M \
+    --output_dir nllb_ct2 \
+    --quantization int8_float16 \
+    --force
+
+# Run the server
+uvicorn main:app --host 0.0.0.0 --port 8000
+
+# In another terminal, expose via ngrok
+ngrok http 8000
+
+Or if you do not want to setup it on your own . Use the alredy deployed model locally using the url
+
+https://ungiving-organismic-elizbeth.ngrok-free.dev/chat
 ---
 
 ## 🎨 Design Philosophy
