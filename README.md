@@ -181,7 +181,7 @@ https://ungiving-organismic-elizbeth.ngrok-free.dev/chat
 | Layer | Technology |
 |-------|-----------|
 | **Mobile App** | React Native + Expo SDK 54 |
-| **Voice AI** | Groq Whisper (STT) + LLaMA 3.3 70B (LLM) |
+| **Voice AI** | Groq Whisper (STT) + Qwen 3.5 8B(LLM) |
 | **Text-to-Speech** | `expo-speech` (on-device) |
 | **Audio Engine** | `expo-av` (recording, playback, looping) |
 | **Haptics** | `expo-haptics` |
