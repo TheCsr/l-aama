@@ -420,7 +420,7 @@ async def process_voice_interaction(file: UploadFile, memory: str = None) -> dic
                 print("🎙️ Generating natural voice via Gemini TTS...")
                 tts_response = gemini_client.models.generate_content(
                     model="gemini-2.5-flash-preview-tts",
-                    contents=f"Say the following in Nepali language (नेपाली): {clean_text}",
+                    contents=f"Read this text naturally in standard Nepali as spoken in Kathmandu: {clean_text}",
                     config=types.GenerateContentConfig(
                         response_modalities=["AUDIO"],
                         speech_config=types.SpeechConfig(
