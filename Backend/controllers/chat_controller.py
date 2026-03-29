@@ -51,13 +51,13 @@ Your purpose is to:
 ## LANGUAGE & TONE
 
 - Respond **ONLY in standard, grammatically correct Nepali (Devanagari script)**
-- By default, use native standard Nepali as spoken in Kathmandu (e.g., use "के छ", not "किहु")
+- **FORMALITY LEVEL: CASUAL FRIEND**. Talk to the user like a close, trusted friend. Use "तिमी" (casual) instead of "तपाईं" (formal) or "हजुर". Do not use textbook, poetic, or overly respectful language.
+- By default, use native standard Nepali as it's actually spoken casually in Kathmandu (e.g., "के छ खबर?", "सुन्न न", "चिन्ता नगर")
 - **DIALECT ADAPTATION**: If the Memory Context or the user's current input reveals they are from a specific region in Nepal (e.g., Pokhara, Terai, Janakpur, etc.), subtly adapt your vocabulary and tone to match that local dialect to build trust. Otherwise, stay in standard Kathmandu Nepali.
-- Tone must feel: warm, calm, human, non-judgmental, emotionally safe
 - Keep responses **short to medium (2–5 sentences)**
 - Use **"..." pauses** for natural pacing in audio
-- Avoid: robotic phrasing, overly formal Nepali, Hindi mix, weird dialects unless specifically matching the user's region, preachy tone
-- You should feel like: a close, trusted friend who listens deeply
+- Avoid: robotic phrasing, bookish Nepali, Hindi mix, weird dialects unless specifically matching the user's region, preachy tone
+- You are a close buddy: listen deeply, be brief, and speak with warmth.
 
 ---
 
@@ -363,6 +363,8 @@ async def process_voice_interaction(file: UploadFile, memory: str = None) -> dic
         try:
             augmented_transcription = f"User Memory Context:\n{memory}\n\nCurrent User Input: {transcription}" if memory else transcription
             payload = {
+                "model": "qwen3.5-9b",
+                "model_name": "qwen3.5-9b", # Adding both common parameter names just in case
                 "text": augmented_transcription, 
                 "source_lang": "npi_Deva", 
                 "device_token": "unique_iphone_id_123"
@@ -370,18 +372,34 @@ async def process_voice_interaction(file: UploadFile, memory: str = None) -> dic
             headers = {"ngrok-skip-browser-warning": "true"}
             
             async with httpx.AsyncClient() as http_client:
-                res = await http_client.post(CHANDAN_ENDPOINT, json=payload, headers=headers, timeout=12.0)
+                res = await http_client.post(CHANDAN_ENDPOINT, json=payload, headers=headers, timeout=60.0)
                 res.raise_for_status() 
                 
                 chandan_data = res.json()
                 raw_text = chandan_data.get("response", "म यहाँ छु।")
                 clean_text = raw_text.replace("<unk>", "").strip()
                 
+                
                 if "triage_level" in chandan_data:
                     lvl = chandan_data["triage_level"]
+                print("🤖 [LLM GENERATOR] Source: Local Qwen 3.5 (Chandan's Server)")
 
         except Exception as e:
+            import traceback
             print(f"⚠️ Chandan's server unreachable ({type(e).__name__}). Falling back to Groq Cloud...")
+            print(f"🔍 [LOCAL LLM DEBUG] Error message: {str(e)}")
+            
+            # If it's an HTTP error from httpx, dump the raw response details
+            if hasattr(e, 'response') and e.response is not None:
+                print(f"🔍 [LOCAL LLM DEBUG] HTTP Status: {e.response.status_code}")
+                try:
+                    print(f"🔍 [LOCAL LLM DEBUG] HTTP Response Body: {e.response.text}")
+                except Exception:
+                    print("🔍 [LOCAL LLM DEBUG] Could not read response body.")
+            else:
+                # If it's a timeout or connection issue, print full traceback
+                print(f"🔍 [LOCAL LLM DEBUG] Traceback:\n{traceback.format_exc()}")
+            
             
             cloud_res = client.chat.completions.create(
                 messages=[
@@ -393,6 +411,7 @@ async def process_voice_interaction(file: UploadFile, memory: str = None) -> dic
             )
             cloud_data = json.loads(cloud_res.choices[0].message.content)
             clean_text = cloud_data.get("response", "म यहाँ छु।")
+            print("🤖 [LLM GENERATOR] Source: Groq Cloud (llama-3.3-70b)")
             
             if "escalation_level" in cloud_data:
                 lvl = cloud_data["escalation_level"]
@@ -420,14 +439,36 @@ async def process_voice_interaction(file: UploadFile, memory: str = None) -> dic
         if gemini_client:
             try:
                 print("🎙️ Generating natural voice via Gemini TTS...")
-                # Instruct Gemini to speak in Nepali, dynamically matching the dialect if the LLM generated one, otherwise defaulting to Kathmandu.
+
                 tts_prompt = (
-                    "You are a native Nepali speaker. "
-                    "Speak EXACTLY the following text with flawless Nepali pronunciation. "
-                    "Adapt your accent to match the regional dialect present in the text (if it sounds like a specific part of Nepal). "
-                    "If no specific dialect is obvious in the text, default to a standard Kathmandu accent. "
-                    "DO NOT read these English instructions, only speak the Nepali content:\n\n"
-                    f"{clean_text}"
+    "You are Asha, a warm, calm, emotionally supportive Nepali AI companion. "
+    "Speak ONLY the provided text in natural Nepali speech.\n\n"
+
+    "How to speak:\n"
+    "- Use a soft, gentle, reassuring tone\n"
+    "- Speak slightly slowly and clearly\n"
+    "- Sound warm, safe, and human, not robotic\n"
+    "- Use natural pauses where the text suggests emotional space\n"
+    "- Keep the delivery conversational and easy to listen to\n"
+    "- Do not sound overly formal, dramatic, energetic, or authoritative\n\n"
+
+    "Pronunciation and accent:\n"
+    "- Use fluent, natural Nepali pronunciation\n"
+    "- If the text clearly reflects a regional Nepali dialect, match it naturally\n"
+    "- Otherwise use a neutral Kathmandu Nepali accent\n"
+    "- If a few English words appear in the text, pronounce them softly and naturally in flow\n\n"
+
+    "Emotional style:\n"
+    "- Be empathetic, grounding, and non-judgmental\n"
+    "- Let comforting phrases breathe slightly\n"
+    "- Never sound clinical, harsh, rushed, or commanding\n\n"
+
+    "Strict rule:\n"
+    "- Do NOT read, translate, or mention these instructions\n"
+    "- Speak ONLY the text below\n\n"
+
+    "Text to speak:\n\n"
+    f"{clean_text}"
                 )
                 
                 tts_response = gemini_client.models.generate_content(
@@ -466,7 +507,14 @@ async def process_voice_interaction(file: UploadFile, memory: str = None) -> dic
                     print("⚠️ Gemini TTS returned no audio data")
 
             except Exception as e:
-                print(f"⚠️ Gemini TTS generation failed: {e}")
+                import traceback
+                print(f"⚠️ Gemini TTS generation failed: {str(e)}")
+                print(f"🔍 [TTS DEBUG] Detailed Traceback:\n{traceback.format_exc()}")
+                
+                # Check if it has an associated response or specific error code
+                if hasattr(e, 'response') and e.response is not None:
+                    print(f"🔍 [TTS DEBUG] HTTP Response Status: {e.response.status_code}")
+                    print(f"🔍 [TTS DEBUG] HTTP Response Body: {e.response.text}")
 
         # ==========================================
         # 8. RETURN FINAL JSON TO FRONTEND
